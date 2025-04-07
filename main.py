@@ -2,48 +2,62 @@ import streamlit as st
 import os
 import re
 from typing import List
-from langchain.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
 from tqdm.auto import tqdm
-# Custom Q&A Splitter Class
+
+import re
+from typing import List
+
 class QASemanticSplitter:
     def __init__(self):
         pass
-    
+
     def split_text(self, text: str) -> List[str]:
-        # Preprocess text
-        text = re.sub(r'\n{3,}', '\n\n', text)  # Reduce multiple newlines
-        text = re.sub(r'===== Page \d+ =====', '', text)  # Remove page markers
-        
-        # Enhanced Q&A pattern matching
-        qa_pattern = re.compile(
-            r'(?=(?:\n\d+[\.\)]|\nQ:|Question:|QUESTION:|\nANS:|Answer:|ANSWER:|\nIMP>))',
-            re.IGNORECASE
+        # Basic cleanups
+        text = re.sub(r'\n{3,}', '\n\n', text)  # Collapse multiple newlines
+        text = re.sub(r'===== Page \d+ =====', '', text)  # Remove manual page markers
+
+        # Remove footer lines like: www.cpp-programs.blogspot.com Page 10
+        text = re.sub(r'www\.[\w\.-]+\.com\s+Page\s+\d+', '', text, flags=re.IGNORECASE)
+
+        # Remove standalone "Page X" patterns
+        text = re.sub(r'\bPage\s+\d+\b', '', text, flags=re.IGNORECASE)
+
+        # Pattern to match question starts
+        question_pattern = re.compile(
+            r'(?=\n*(\d+\s*[\.\)]|Q:|Question:|QUESTION:))', re.IGNORECASE
         )
-        parts = qa_pattern.split(text)
-        
-        # Filter out empty/non-QA parts
-        parts = [part.strip() for part in parts if part.strip()]
-        
-        # Group Q&A pairs
-        qa_chunks = []
-        current_qa = ""
-        
-        for part in parts:
-            # If part starts with a question pattern, start a new Q&A chunk
-            if re.match(r'(?:\d+[\.\)]|Q:|Question:|QUESTION:)', part, re.IGNORECASE):
-                if current_qa:
-                    qa_chunks.append(current_qa)
-                current_qa = part
+
+        # Split based on detected question patterns
+        chunks = question_pattern.split(text)
+
+        # Grouping chunks into question-answer pairs
+        qa_pairs = []
+        current_question = ""
+
+        for i in range(len(chunks)):
+            part = chunks[i].strip()
+            if not part:
+                continue
+
+            # If this part looks like a new question, store the previous QA if it exists
+            if re.match(r'^(\d+\s*[\.\)]|Q:|Question:|QUESTION:)', part, re.IGNORECASE):
+                if current_question:
+                    qa_pairs.append(current_question.strip())
+                current_question = part
             else:
-                # Append answers to the current question
-                current_qa += "\n" + part
-        
-        if current_qa:
-            qa_chunks.append(current_qa)
-        
-        return qa_chunks
+                # It's part of the current answer — keep appending
+                current_question += "\n" + part
+
+        # Add the last question-answer if any
+        if current_question:
+            qa_pairs.append(current_question.strip())
+
+        return qa_pairs
+
+
 
 # Initialize Pinecone
 def init_pinecone():
@@ -182,14 +196,14 @@ def main():
     # File upload section
     with st.expander("📤 Upload PDF Documents", expanded=True):
         uploaded_files = st.file_uploader(
-            "Choose PDF files only.", 
+            "Choose PDF files.", 
             type="pdf", 
             accept_multiple_files=True,
             help="Upload one or more PDF documents to build the knowledge base"
         )
         
         if uploaded_files and st.button("⚙️Process PDFs"):
-            with st.spinner("Processing PDFs and building knowledge base..."):
+            with st.spinner("Processing files please wait"):
                 num_chunks = process_pdfs(uploaded_files, index)
                 st.success(f"🟢{len(uploaded_files)} PDF(s) processed successfully!")
     
