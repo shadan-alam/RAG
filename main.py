@@ -1,3 +1,8 @@
+"""A simple PDF Querying system using RAG(Retrieval-Augmented Generation)
+Created by: Shadan Alam
+Date: 8th April 2025.
+"""
+#----------------------------------------------------------------< Imporing Necessary Libraries >
 import streamlit as st
 import os
 import re
@@ -6,14 +11,10 @@ from langchain_community.document_loaders import PyPDFLoader
 from sentence_transformers import SentenceTransformer
 from pinecone import Pinecone, ServerlessSpec
 from tqdm.auto import tqdm
-
-import re
-from typing import List
-
+#---------------------------------------------------------------< Custom Semantic Splitting class >
 class QASemanticSplitter:
     def __init__(self):
         pass
-
     def split_text(self, text: str) -> List[str]:
         # Basic cleanups
         text = re.sub(r'\n{3,}', '\n\n', text)  # Collapse multiple newlines
@@ -56,10 +57,7 @@ class QASemanticSplitter:
             qa_pairs.append(current_question.strip())
 
         return qa_pairs
-
-
-
-# Initialize Pinecone
+#-----------------------------------------------------------------< Initializing Pinecone Vector Database >
 def init_pinecone():
     pc = Pinecone(api_key=st.secrets["PINECONE_API_KEY"])
     index_name = "cprogramming"
@@ -79,8 +77,7 @@ def init_pinecone():
         )
     
     return pc.Index(index_name)
-
-# Process uploaded PDFs
+#------------------------------------------------------------------------------<PDF Processing>
 def process_pdfs(uploaded_files, index):
     model = SentenceTransformer("BAAI/bge-small-en-v1.5")
     splitter = QASemanticSplitter()
@@ -147,7 +144,7 @@ def process_pdfs(uploaded_files, index):
         index.upsert(vectors=vectors)
     
     return len(all_chunks)
-
+#---------------------------------------------------------------< Query your prompt >
 def query_qna(question, index, top_k=1, similarity_threshold=0.7):
     model = SentenceTransformer("BAAI/bge-small-en-v1.5")
     query_embed = model.encode(question).tolist()
@@ -182,8 +179,7 @@ def query_qna(question, index, top_k=1, similarity_threshold=0.7):
         }]
     
     return filtered_results
-
-# Streamlit UI
+#---------------------------------------------------------------< Interface>
 def main():
     st.set_page_config(page_title="PDF Query System", layout="wide")
     
